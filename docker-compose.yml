@@ -1,0 +1,53 @@
+# api-gateway with its own Redis (rate limits).
+#   docker network create tej-net        # once per machine, shared by all services
+#   docker compose up --build
+# Gateway: http://localhost:4000. Upstream services are reached over tej-net,
+# so start them from their own folders (auth-service, catalog-service,
+# inventory-service, cart-service, promotion-service, shipping-service,
+# order-service, payment-service).
+#
+# For hot reload, run only Redis here and the gateway on your machine:
+#   docker compose up redis
+#   pnpm dev
+name: tej-gateway
+
+services:
+  redis:
+    image: redis:7.4-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 10
+    restart: unless-stopped
+
+  api-gateway:
+    build: .
+    environment:
+      NODE_ENV: development
+      AUTH_SERVICE_URL: http://auth-service:4001
+      CATALOG_SERVICE_URL: http://catalog-service:4002
+      INVENTORY_SERVICE_URL: http://inventory-service:4003
+      CART_SERVICE_URL: http://cart-service:4004
+      PROMOTION_SERVICE_URL: http://promotion-service:4005
+      ORDER_SERVICE_URL: http://order-service:4006
+      PAYMENT_SERVICE_URL: http://payment-service:4007
+      SHIPPING_SERVICE_URL: http://shipping-service:4008
+      REDIS_URL: redis://redis:6379
+      FRONTEND_ORIGINS: http://localhost:3000
+      # Production keeps the default of 5/min; the auth-service e2e suite signs up many accounts from one IP.
+      RATE_LIMIT_AUTH: "100"
+    ports:
+      - "4000:4000"
+    networks:
+      - default
+      - tej-net # the frontend reaches it here as http://api-gateway:4000
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+networks:
+  tej-net:
+    external: true
